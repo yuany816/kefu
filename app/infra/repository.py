@@ -35,6 +35,41 @@ class Repository:
             ).fetchone()
             return bool(row["ok"])
 
+    def get_channel_sync_offset(
+        self, tenant_id: UUID, *, channel: str, account_id: str
+    ) -> int:
+        with self.database.tenant_connection(tenant_id) as connection:
+            row = connection.execute(
+                """
+                SELECT last_seq FROM channel_sync_offsets
+                WHERE tenant_id = %s AND channel = %s AND account_external_id = %s
+                """,
+                (tenant_id, channel, account_id),
+            ).fetchone()
+            return int(row["last_seq"]) if row else 0
+
+    def save_channel_sync_offset(
+        self,
+        tenant_id: UUID,
+        *,
+        channel: str,
+        account_id: str,
+        last_seq: int,
+    ) -> None:
+        with self.database.tenant_connection(tenant_id) as connection:
+            connection.execute(
+                """
+                INSERT INTO channel_sync_offsets (
+                    tenant_id, channel, account_external_id, last_seq
+                ) VALUES (%s, %s, %s, %s)
+                ON CONFLICT (tenant_id, channel, account_external_id) DO UPDATE
+                SET last_seq = GREATEST(
+                    channel_sync_offsets.last_seq, EXCLUDED.last_seq
+                ), updated_at = now()
+                """,
+                (tenant_id, channel, account_id, last_seq),
+            )
+
     def create_document(
         self,
         *,

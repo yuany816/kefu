@@ -7,7 +7,9 @@
 - 文本、PDF、DOCX 文档解析与切片
 - 向量检索 + 中文友好的 trigram 词法检索 + RRF 融合
 - AI 自动回复、置信度判断和转人工状态机
-- 企业微信本地 Agent 的事件/命令/回执协议
+- 企业微信官方服务端 API（token、客户群列表/详情）
+- 企业微信会话内容存档 SDK 增量拉取、解密和去重
+- 渠道发送命令/回执协议（可接第三方 API 发送适配器）
 - 无外部模型凭证时可运行的本地确定性模拟模型
 
 ## 运行
@@ -71,15 +73,11 @@ curl 'http://127.0.0.1:8000/api/v1/agents/mock-device-1/commands' \
   -H 'X-Tenant-ID: <tenant_id>'
 ```
 
-## 真实企微 Agent 边界
+## 企业微信 API
 
-后端不依赖具体桌面自动化实现。本地 Agent 只需实现：
+本项目不使用桌面控制、OCR 或 UI Automation。普通服务端 API 用于 token、客户群列表和群详情；客户群消息正文由官方会话内容存档 SDK 增量读取。
 
-1. 读取新消息并调用 `POST /api/v1/agents/events`
-2. 轮询 `GET /api/v1/agents/{device_id}/commands`
-3. 校验当前会话后发送消息
-4. 调用 `POST /api/v1/agents/{device_id}/commands/{command_id}/ack`
-5. 人工接管时上报 `POST /api/v1/conversations/{id}/takeover`
+配置、权限和运行方式见 [docs/wecom-api-setup.md](docs/wecom-api-setup.md)。
 
-待确认企业微信运行在 Windows 还是 macOS 后，再实现对应的 UI Automation 控制器。
+重要边界：企业微信官方 API 暂不提供“以成员身份向外部客户群实时发送任意消息”的接口。系统已经保留渠道发送适配器和人工接管状态机；若必须全自动发送，需要接入具备客户群发送能力的 API 服务。
 

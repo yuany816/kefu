@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     min_retrieval_score: float = Field(default=0.25, ge=0, le=1)
     agent_command_lease_seconds: int = Field(default=30, ge=5, le=300)
 
+    # 企业微信服务端 API。凭证只从环境变量读取，禁止写入数据库或提交到 Git。
+    wecom_base_url: str = "https://qyapi.weixin.qq.com"
+    wecom_corp_id: str = ""
+    wecom_corp_secret: str = ""
+    wecom_request_timeout_seconds: float = Field(default=15.0, ge=1, le=60)
+
+    # 会话内容存档使用独立 Secret，并非普通应用/客户联系 Secret。
+    wecom_archive_secret: str = ""
+    wecom_archive_private_key_path: Path | None = None
+    wecom_finance_sdk_path: Path | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

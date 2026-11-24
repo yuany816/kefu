@@ -11,6 +11,7 @@ from app.api.dependencies import (
     get_orchestrator,
     get_repository,
     get_settings_from_app,
+    get_wecom_client,
     require_api_key,
 )
 from app.config import Settings
@@ -28,8 +29,17 @@ from app.domain.models import (
     TenantCreate,
     TenantOut,
     TextDocumentCreate,
+    WeComArchiveBatch,
+    WeComArchiveBatchResult,
+    WeComGroupListRequest,
+    WeComStatusOut,
 )
 from app.infra.repository import Repository
+from app.integrations.wecom import (
+    WeComAPIError,
+    WeComClient,
+    archive_message_to_event,
+)
 from app.services.documents import DocumentParser, UnsupportedDocumentType
 from app.services.knowledge import KnowledgeService
 from app.services.orchestrator import CustomerServiceOrchestrator
@@ -210,4 +220,96 @@ def release_conversation(
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ConversationOut.model_validate(row)
+
+
+@router.get("/wecom/status", response_model=WeComStatusOut)
+async def get_wecom_status(
+    _: TenantId,
+    wecom: Annotated[WeComClient, Depends(get_wecom_client)],
+) -> WeComStatusOut:
+    try:
+        return WeComStatusOut.model_validate(await wecom.probe())
+    except (WeComAPIError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/wecom/customer-groups/query")
+async def query_wecom_customer_groups(
+    payload: WeComGroupListRequest,
+    _: TenantId,
+    wecom: Annotated[WeComClient, Depends(get_wecom_client)],
+) -> dict:
+    try:
+        return await wecom.get_customer_group_list(
+            status_filter=payload.status_filter,
+            owner_filter=payload.owner_user_ids,
+            cursor=payload.cursor,
+            limit=payload.limit,
+        )
+    except WeComAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/wecom/customer-groups/{chat_id}")
+async def get_wecom_customer_group(
+    chat_id: str,
+    _: TenantId,
+    wecom: Annotated[WeComClient, Depends(get_wecom_client)],
+) -> dict:
+    try:
+        return await wecom.get_customer_group(chat_id)
+    except WeComAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/wecom/archive/events", response_model=WeComArchiveBatchResult)
+async def receive_wecom_archive_events(
+    payload: WeComArchiveBatch,
+    tenant_id: TenantId,
+    wecom: Annotated[WeComClient, Depends(get_wecom_client)],
+    orchestrator: Annotated[CustomerServiceOrchestrator, Depends(get_orchestrator)],
+) -> WeComArchiveBatchResult:
+    """Accept decrypted records pulled with the official Finance SDK.
+
+    Group details are resolved through the official API so messages written by
+    enterprise members are ignored. This prevents reply loops.
+    """
+
+    room_ids = {str(item.get("roomid", "")) for item in payload.messages}
+    room_ids.discard("")
+    internal_users_by_room: dict[str, set[str]] = {}
+    try:
+        for room_id in room_ids:
+            detail = await wecom.get_customer_group(room_id)
+            members = (detail.get("group_chat") or {}).get("member_list") or []
+            internal_users_by_room[room_id] = {
+                str(member.get("userid"))
+                for member in members
+                if int(member.get("type", 0)) == 1 and member.get("userid")
+            }
+    except WeComAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    accepted = duplicate = handoff = 0
+    for raw_message in payload.messages:
+        room_id = str(raw_message.get("roomid", ""))
+        event = archive_message_to_event(
+            raw_message,
+            corp_id=wecom.corp_id,
+            internal_user_ids=internal_users_by_room.get(room_id, set()),
+        )
+        if event is None:
+            continue
+        receipt = await orchestrator.handle_event(tenant_id=tenant_id, event=event)
+        accepted += int(receipt.accepted)
+        duplicate += int(receipt.duplicate)
+        handoff += int(bool(receipt.action and receipt.action.startswith("handoff:")))
+
+    return WeComArchiveBatchResult(
+        received=len(payload.messages),
+        accepted=accepted,
+        skipped=len(payload.messages) - accepted,
+        duplicate=duplicate,
+        handoff=handoff,
+    )
 

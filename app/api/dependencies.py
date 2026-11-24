@@ -5,6 +5,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 
 from app.config import Settings
 from app.infra.repository import Repository
+from app.integrations.wecom import WeComClient, WeComNotConfiguredError
 from app.services.knowledge import KnowledgeService
 from app.services.orchestrator import CustomerServiceOrchestrator
 
@@ -23,6 +24,16 @@ def get_knowledge_service(request: Request) -> KnowledgeService:
 
 def get_orchestrator(request: Request) -> CustomerServiceOrchestrator:
     return request.app.state.orchestrator
+
+
+def get_wecom_client(request: Request) -> WeComClient:
+    client: WeComClient = request.app.state.wecom_client
+    if not client.configured:
+        raise HTTPException(
+            status_code=503,
+            detail="企业微信 API 未配置",
+        ) from WeComNotConfiguredError()
+    return client
 
 
 def require_api_key(

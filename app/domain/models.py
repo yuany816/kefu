@@ -117,3 +117,28 @@ class ConversationOut(BaseModel):
     ai_message_count: int
     updated_at: datetime
 
+
+class WeComStatusOut(BaseModel):
+    configured: bool
+    token_valid: bool
+    corp_id: str
+
+
+class WeComGroupListRequest(BaseModel):
+    status_filter: int = Field(default=0, ge=0, le=4)
+    owner_user_ids: list[str] = Field(default_factory=list, max_length=100)
+    cursor: str | None = Field(default=None, max_length=1000)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+
+class WeComArchiveBatch(BaseModel):
+    messages: list[dict[str, Any]] = Field(min_length=1, max_length=1000)
+
+
+class WeComArchiveBatchResult(BaseModel):
+    received: int
+    accepted: int
+    skipped: int
+    duplicate: int
+    handoff: int
+
