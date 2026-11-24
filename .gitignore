@@ -8,4 +8,6 @@ htmlcov/
 .coverage
 data/uploads/*
 !data/uploads/.gitkeep
+secrets/
+vendor/wecom-sdk/
 

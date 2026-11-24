@@ -31,11 +31,13 @@ python -m scripts.probe_wecom
 
 ```dotenv
 WECOM_ARCHIVE_SECRET=会话内容存档页面的独立Secret
-WECOM_ARCHIVE_PRIVATE_KEY_PATH=/run/secrets/wecom_archive_private_key.pem
-WECOM_FINANCE_SDK_PATH=/opt/wecom/libWeWorkFinanceSdk_C.so
+WECOM_ARCHIVE_PRIVATE_KEY_PATH=./secrets/wecom_archive_private_key.pem
+WECOM_FINANCE_SDK_PATH=./vendor/wecom-sdk/libWeWorkFinanceSdk_C.so
 ```
 
 会话存档 Secret 与普通 `WECOM_CORP_SECRET` 不相同。SDK 官方提供 Linux/Windows 原生库，生产同步 Worker 建议部署在 Linux。
+
+仓库已忽略 `secrets/` 和 `vendor/wecom-sdk/`，私钥及官方二进制不会被 Git 跟踪。
 
 首次部署需要先执行 `migrations/002_channel_sync.sql`，然后启动增量同步：
 
